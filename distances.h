@@ -26,4 +26,7 @@ float histIntersection(const std::vector<float> &a, const std::vector<float> &b)
 float multiHistDistance(const std::vector<float> &a, const std::vector<float> &b,
                         int histSize, float w1 = 0.5f, float w2 = 0.5f);
 
+// Cosine distance: 1 - cos(theta). Computed via L2-normalized dot product.
+float cosineDistance(const std::vector<float> &a, const std::vector<float> &b);
+
 #endif // DISTANCES_H

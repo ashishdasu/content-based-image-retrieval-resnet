@@ -15,6 +15,8 @@
     rgb_hist      - 3D RGB histogram (8 bins), histogram intersection
     multi_hist    - top/bottom RGB histograms (8 bins each), weighted intersection
     texture_color - RGB histogram + Sobel magnitude histogram, weighted intersection
+    dnn           - ResNet18 embeddings from CSV, cosine distance
+                    Usage for dnn: cbir <target_name> <csv_path> dnn <N>
 */
 
 #include <cstdio>
@@ -100,6 +102,76 @@ static float computeDistance(const std::vector<float> &a,
 }
 
 // ---------------------------------------------------------------------------
+// DNN embedding support
+// ---------------------------------------------------------------------------
+
+// Read a CSV where each row is: filename,v0,v1,...,v511
+static int readEmbeddingsCSV(const char *csv_path,
+                              std::vector<std::string> &names,
+                              std::vector<std::vector<float>> &data) {
+    FILE *fp = fopen(csv_path, "r");
+    if (!fp) {
+        fprintf(stderr, "Cannot open CSV: %s\n", csv_path);
+        return -1;
+    }
+
+    char line[16384];
+    while (fgets(line, sizeof(line), fp)) {
+        char *tok = strtok(line, ",\n");
+        if (!tok) continue;
+        names.push_back(std::string(tok));
+
+        std::vector<float> row;
+        while ((tok = strtok(NULL, ",\n")) != NULL)
+            row.push_back((float)atof(tok));
+        data.push_back(row);
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+// Full DNN query — reads embeddings from CSV, ranks by cosine distance
+static int queryDNN(const char *target_name, const char *csv_path, int N) {
+    std::vector<std::string> names;
+    std::vector<std::vector<float>> data;
+
+    if (readEmbeddingsCSV(csv_path, names, data) != 0) return -1;
+    printf("Loaded %zu embeddings from %s\n", names.size(), csv_path);
+
+    std::string tbase = basename(std::string(target_name));
+
+    int target_idx = -1;
+    for (int i = 0; i < (int)names.size(); i++) {
+        if (basename(names[i]) == tbase) { target_idx = i; break; }
+    }
+    if (target_idx < 0) {
+        fprintf(stderr, "Target '%s' not found in CSV\n", target_name);
+        return -1;
+    }
+
+    const std::vector<float> &tvec = data[target_idx];
+
+    std::vector<std::pair<float, std::string>> results;
+    for (int i = 0; i < (int)names.size(); i++) {
+        if (i == target_idx) continue;
+        results.push_back({cosineDistance(tvec, data[i]), names[i]});
+    }
+
+    std::sort(results.begin(), results.end());
+
+    int show = std::min(N, (int)results.size());
+    printf("\nTop %d matches for %s  [method: dnn / cosine]\n", show, tbase.c_str());
+    printf("%-5s  %-12s  %s\n", "Rank", "Distance", "File");
+    printf("%-5s  %-12s  %s\n", "----", "--------", "----");
+    for (int i = 0; i < show; i++) {
+        printf("%-5d  %-12.4f  %s\n", i + 1, results[i].first,
+               basename(results[i].second).c_str());
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -115,6 +187,11 @@ int main(int argc, char *argv[]) {
     const char *image_dir   = argv[2];
     const char *feat_type   = argv[3];
     int N = atoi(argv[4]);
+
+    // DNN path: embeddings are pre-computed; argv[2] is the CSV, not an image dir
+    if (strcmp(feat_type, "dnn") == 0) {
+        return queryDNN(target_path, image_dir, N);
+    }
 
     // ------------------------------------------------------------------
     // Step 1: compute features for the target image

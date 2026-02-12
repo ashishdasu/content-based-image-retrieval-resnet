@@ -7,6 +7,7 @@
 */
 
 #include "distances.h"
+#include <cmath>
 
 /*
   ssd
@@ -61,4 +62,24 @@ float multiHistDistance(const std::vector<float> &a, const std::vector<float> &b
     std::vector<float> b2(b.begin() + histSize, b.end());
 
     return w1 * histIntersection(a1, b1) + w2 * histIntersection(a2, b2);
+}
+
+/*
+  cosineDistance
+
+  1 - cosine_similarity(a, b), where cosine similarity is the dot product
+  of the L2-normalized vectors. Range is [0, 2]; 0 means identical direction.
+
+  Normalizing first then dot-producting avoids a separate magnitude computation
+  and handles the high-dimensional case (512-d embeddings) cleanly.
+*/
+float cosineDistance(const std::vector<float> &a, const std::vector<float> &b) {
+    float dot = 0.0f, na = 0.0f, nb = 0.0f;
+    for (size_t i = 0; i < a.size(); i++) {
+        dot += a[i] * b[i];
+        na  += a[i] * a[i];
+        nb  += b[i] * b[i];
+    }
+    if (na < 1e-8f || nb < 1e-8f) return 1.0f;
+    return 1.0f - dot / (std::sqrt(na) * std::sqrt(nb));
 }
