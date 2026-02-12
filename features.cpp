@@ -142,3 +142,58 @@ int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
 
     return 0;
 }
+
+/*
+  textureColorFeature
+
+  Concatenates two whole-image descriptors:
+    1. RGB color histogram (colorBins^3 values, normalized)
+    2. Sobel gradient magnitude histogram (textureBins values, normalized)
+
+  The texture histogram captures edge density at different strength levels.
+  Smooth images (flat color, sky, water) accumulate in the low-magnitude bins;
+  textured images (foliage, fabric, crowds) spread energy into higher bins.
+
+  Sobel is run on a grayscale version of the image. Magnitudes are capped at
+  1000 before binning — values above this are strong edges and land in the
+  last bin. This cap handles the ~1442 theoretical max without distorting the
+  lower bins where most of the variation is.
+*/
+int textureColorFeature(cv::Mat &src, std::vector<float> &fvec,
+                        int colorBins, int textureBins) {
+    fvec.clear();
+
+    // --- color part ---
+    std::vector<float> color_hist;
+    rgbHistogram(src, color_hist, colorBins);
+
+    // --- texture part ---
+    cv::Mat gray;
+    cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+
+    cv::Mat sx, sy;
+    cv::Sobel(gray, sx, CV_32F, 1, 0, 3);
+    cv::Sobel(gray, sy, CV_32F, 0, 1, 3);
+
+    cv::Mat mag;
+    cv::magnitude(sx, sy, mag);
+
+    const float max_mag = 1000.0f;
+    float scale = textureBins / max_mag;
+    int total = mag.rows * mag.cols;
+
+    std::vector<float> texture_hist(textureBins, 0.0f);
+    for (int r = 0; r < mag.rows; r++) {
+        for (int c = 0; c < mag.cols; c++) {
+            int bin = std::min((int)(mag.at<float>(r, c) * scale), textureBins - 1);
+            texture_hist[bin] += 1.0f;
+        }
+    }
+    for (auto &v : texture_hist) v /= total;
+
+    // --- concatenate ---
+    fvec.insert(fvec.end(), color_hist.begin(), color_hist.end());
+    fvec.insert(fvec.end(), texture_hist.begin(), texture_hist.end());
+
+    return 0;
+}

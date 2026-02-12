@@ -29,4 +29,9 @@ int rgbHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 8);
 // Top-half + bottom-half RGB histograms concatenated. 2 * bins^3 values.
 int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 8);
 
+// Whole-image RGB histogram + Sobel gradient magnitude histogram concatenated.
+// colorBins^3 + textureBins values total.
+int textureColorFeature(cv::Mat &src, std::vector<float> &fvec,
+                        int colorBins = 8, int textureBins = 16);
+
 #endif // FEATURES_H

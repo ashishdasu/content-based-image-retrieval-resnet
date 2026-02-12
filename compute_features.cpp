@@ -12,10 +12,11 @@
     compute_features <image_dir> <feature_type> <output_csv>
 
   Supported feature types:
-    baseline    - 7x7 center patch (147 values)
-    rg_hist     - 2D RG chromaticity histogram, 16 bins (256 values)
-    rgb_hist    - 3D RGB histogram, 8 bins (512 values)
-    multi_hist  - top/bottom RGB histograms, 8 bins (1024 values)
+    baseline      - 7x7 center patch (147 values)
+    rg_hist       - 2D RG chromaticity histogram, 16 bins (256 values)
+    rgb_hist      - 3D RGB histogram, 8 bins (512 values)
+    multi_hist    - top/bottom RGB histograms, 8 bins (1024 values)
+    texture_color - RGB histogram + Sobel magnitude histogram (528 values)
 */
 
 #include <cstdio>
@@ -86,6 +87,8 @@ int main(int argc, char *argv[]) {
             status = rgbHistogram(img, feat);
         else if (strcmp(feat_type, "multi_hist") == 0)
             status = multiHistogram(img, feat);
+        else if (strcmp(feat_type, "texture_color") == 0)
+            status = textureColorFeature(img, feat);
         else {
             fprintf(stderr, "Unknown feature type: %s\n", feat_type);
             fclose(fp);
