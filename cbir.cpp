@@ -81,6 +81,8 @@ static int computeFeature(cv::Mat &img, const char *feat_type,
         return multiHistogram(img, fvec);
     if (strcmp(feat_type, "texture_color") == 0)
         return textureColorFeature(img, fvec);
+    if (strcmp(feat_type, "cooccurrence") == 0)
+        return cooccurrenceFeature(img, fvec);
 
     fprintf(stderr, "Unknown feature type: %s\n", feat_type);
     return -1;
@@ -97,6 +99,8 @@ static float computeDistance(const std::vector<float> &a,
         return multiHistDistance(a, b, 8 * 8 * 8);
     if (strcmp(feat_type, "texture_color") == 0)
         return multiHistDistance(a, b, 8 * 8 * 8); // split: 512 color + 16 texture
+    if (strcmp(feat_type, "cooccurrence") == 0)
+        return ssd(a, b); // 5 normalized values, SSD is appropriate
 
     return ssd(a, b);
 }
@@ -247,10 +251,10 @@ int main(int argc, char *argv[]) {
     int show = std::min(N, (int)results.size());
     printf("\nTop %d matches for %s  [method: %s]\n", show,
            target_base.c_str(), feat_type);
-    printf("%-5s  %-12s  %s\n", "Rank", "Distance", "File");
-    printf("%-5s  %-12s  %s\n", "----", "--------", "----");
+    printf("%-5s  %-14s  %s\n", "Rank", "Distance", "File");
+    printf("%-5s  %-14s  %s\n", "----", "--------", "----");
     for (int i = 0; i < show; i++) {
-        printf("%-5d  %-12.2f  %s\n", i + 1, results[i].first,
+        printf("%-5d  %-14.6f  %s\n", i + 1, results[i].first,
                basename(results[i].second).c_str());
     }
 

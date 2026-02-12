@@ -34,4 +34,9 @@ int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 8);
 int textureColorFeature(cv::Mat &src, std::vector<float> &fvec,
                         int colorBins = 8, int textureBins = 16);
 
+// Gray-level co-occurrence matrix (GLCM) texture features.
+// Computes 5 Haralick statistics averaged over 4 directions, normalized to [0,1].
+// levels: number of gray levels to quantize to (default 8).
+int cooccurrenceFeature(cv::Mat &src, std::vector<float> &fvec, int levels = 8);
+
 #endif // FEATURES_H

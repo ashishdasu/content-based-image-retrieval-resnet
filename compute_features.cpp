@@ -89,6 +89,8 @@ int main(int argc, char *argv[]) {
             status = multiHistogram(img, feat);
         else if (strcmp(feat_type, "texture_color") == 0)
             status = textureColorFeature(img, feat);
+        else if (strcmp(feat_type, "cooccurrence") == 0)
+            status = cooccurrenceFeature(img, feat);
         else {
             fprintf(stderr, "Unknown feature type: %s\n", feat_type);
             fclose(fp);

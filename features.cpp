@@ -8,6 +8,7 @@
 
 #include "features.h"
 #include <cstdio>
+#include <cmath>
 
 /*
   baselineFeature
@@ -139,6 +140,116 @@ int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
 
     fvec.insert(fvec.end(), top_hist.begin(), top_hist.end());
     fvec.insert(fvec.end(), bot_hist.begin(), bot_hist.end());
+
+    return 0;
+}
+
+/*
+  cooccurrenceFeature
+
+  Computes the Gray-Level Co-occurrence Matrix (GLCM) for four spatial
+  offsets — horizontal (1,0), vertical (0,1), diagonal (1,1), and
+  anti-diagonal (1,-1) — then extracts five Haralick statistics from each
+  and averages them across directions for rotation invariance.
+
+  The five features:
+    Energy      - sum of squared probabilities; high for uniform/regular textures
+    Entropy     - randomness; high for complex/irregular textures
+    Contrast    - local intensity variation; high when neighbors differ a lot
+    Homogeneity - closeness to diagonal; high when neighbors are similar
+    Correlation - linear dependency of gray-level pairs
+
+  All five are normalized to [0, 1] before being placed in the feature vector
+  so that SSD operates on comparable scales.
+
+  Gray levels are quantized to `levels` bins (default 8) to keep the matrix
+  compact. The GLCM is made symmetric by counting both (i,j) and (j,i).
+*/
+int cooccurrenceFeature(cv::Mat &src, std::vector<float> &fvec, int levels) {
+    fvec.clear();
+
+    cv::Mat gray;
+    cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+
+    // 4 offsets: (dx, dy)
+    const int dx[] = {1, 0, 1,  1};
+    const int dy[] = {0, 1, 1, -1};
+    const int ndirs = 4;
+
+    float sum_energy = 0, sum_entropy = 0, sum_contrast = 0;
+    float sum_homogeneity = 0, sum_correlation = 0;
+
+    for (int d = 0; d < ndirs; d++) {
+        // Build and normalize GLCM
+        std::vector<std::vector<float>> glcm(levels, std::vector<float>(levels, 0.0f));
+        float count = 0.0f;
+
+        int r0 = (dy[d] < 0) ? -dy[d] : 0;
+        int r1 = src.rows - ((dy[d] > 0) ? dy[d] : 0);
+        int c0 = (dx[d] < 0) ? -dx[d] : 0;
+        int c1 = src.cols - ((dx[d] > 0) ? dx[d] : 0);
+
+        for (int r = r0; r < r1; r++) {
+            for (int c = c0; c < c1; c++) {
+                int i = gray.at<uchar>(r, c) * levels / 256;
+                int j = gray.at<uchar>(r + dy[d], c + dx[d]) * levels / 256;
+                i = std::min(i, levels - 1);
+                j = std::min(j, levels - 1);
+                glcm[i][j] += 1.0f;
+                glcm[j][i] += 1.0f;
+                count += 2.0f;
+            }
+        }
+
+        if (count < 1.0f) continue;
+        for (int i = 0; i < levels; i++)
+            for (int j = 0; j < levels; j++)
+                glcm[i][j] /= count;
+
+        // Mean and std for correlation (symmetric GLCM: mu_i == mu_j)
+        float mu = 0.0f;
+        for (int i = 0; i < levels; i++) {
+            float row = 0.0f;
+            for (int j = 0; j < levels; j++) row += glcm[i][j];
+            mu += i * row;
+        }
+        float sigma2 = 0.0f;
+        for (int i = 0; i < levels; i++) {
+            float row = 0.0f;
+            for (int j = 0; j < levels; j++) row += glcm[i][j];
+            sigma2 += (i - mu) * (i - mu) * row;
+        }
+
+        float energy = 0, entropy = 0, contrast = 0, homogeneity = 0, correlation = 0;
+        for (int i = 0; i < levels; i++) {
+            for (int j = 0; j < levels; j++) {
+                float p = glcm[i][j];
+                if (p < 1e-12f) continue;
+                energy      += p * p;
+                entropy     -= p * std::log(p + 1e-12f);
+                contrast    += (float)(i - j) * (i - j) * p;
+                homogeneity += p / (1.0f + (i - j) * (i - j));
+                if (sigma2 > 1e-8f)
+                    correlation += (i - mu) * (j - mu) * p / sigma2;
+            }
+        }
+
+        sum_energy      += energy;
+        sum_entropy     += entropy;
+        sum_contrast    += contrast;
+        sum_homogeneity += homogeneity;
+        sum_correlation += correlation;
+    }
+
+    // Average across directions, then normalize to [0, 1]
+    float max_entropy = std::log((float)(levels * levels));
+    float max_contrast = (float)(levels - 1) * (levels - 1);
+
+    fvec.push_back(sum_energy      / ndirs);                        // [0, 1]
+    fvec.push_back(sum_entropy     / ndirs / max_entropy);          // [0, 1]
+    fvec.push_back(sum_contrast    / ndirs / max_contrast);         // [0, 1]
+    fvec.push_back(sum_homogeneity / ndirs);                        // [0, 1]
+    fvec.push_back((sum_correlation / ndirs + 1.0f) / 2.0f);       // [-1,1] -> [0,1]
 
     return 0;
 }
