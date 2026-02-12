@@ -45,3 +45,70 @@ int baselineFeature(cv::Mat &src, std::vector<float> &fvec) {
 
     return 0;
 }
+
+/*
+  rgChromaHistogram
+
+  Computes a normalized 2D histogram in RG chromaticity space.
+  r = R/(R+G+B),  g = G/(R+G+B).  Pixels where R+G+B < 1 (pure black)
+  are skipped to avoid division by zero.
+
+  Stored row-major: index = r_bin * bins + g_bin.
+  Values are normalized by the number of non-black pixels, so each bin
+  holds the fraction of pixels falling there.
+*/
+int rgChromaHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
+    fvec.assign(bins * bins, 0.0f);
+
+    int counted = 0;
+    for (int r = 0; r < src.rows; r++) {
+        for (int c = 0; c < src.cols; c++) {
+            cv::Vec3b px = src.at<cv::Vec3b>(r, c);
+            float B = px[0], G = px[1], R = px[2];
+            float total = B + G + R;
+            if (total < 1.0f) continue;
+
+            float rn = R / total;
+            float gn = G / total;
+
+            int ri = std::min((int)(rn * bins), bins - 1);
+            int gi = std::min((int)(gn * bins), bins - 1);
+            fvec[ri * bins + gi] += 1.0f;
+            counted++;
+        }
+    }
+
+    if (counted > 0) {
+        for (auto &v : fvec) v /= counted;
+    }
+
+    return 0;
+}
+
+/*
+  rgbHistogram
+
+  Computes a normalized 3D RGB histogram by binning each channel independently.
+  Index = r_bin * bins^2 + g_bin * bins + b_bin.
+  Histogram is normalized by total pixel count.
+*/
+int rgbHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
+    fvec.assign(bins * bins * bins, 0.0f);
+
+    float scale = bins / 256.0f;
+    int total   = src.rows * src.cols;
+
+    for (int r = 0; r < src.rows; r++) {
+        for (int c = 0; c < src.cols; c++) {
+            cv::Vec3b px = src.at<cv::Vec3b>(r, c);
+            int bi = std::min((int)(px[0] * scale), bins - 1); // B
+            int gi = std::min((int)(px[1] * scale), bins - 1); // G
+            int ri = std::min((int)(px[2] * scale), bins - 1); // R
+            fvec[ri * bins * bins + gi * bins + bi] += 1.0f;
+        }
+    }
+
+    for (auto &v : fvec) v /= total;
+
+    return 0;
+}

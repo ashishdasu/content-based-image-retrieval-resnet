@@ -19,3 +19,11 @@ add_executable(cbir
 )
 target_include_directories(cbir PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(cbir PRIVATE ${OpenCV_LIBS})
+
+# Offline feature pre-computation
+add_executable(compute_features
+    compute_features.cpp
+    ${CORE_SOURCES}
+)
+target_include_directories(compute_features PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(compute_features PRIVATE ${OpenCV_LIBS})

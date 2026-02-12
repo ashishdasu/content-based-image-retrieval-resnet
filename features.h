@@ -20,4 +20,10 @@
 */
 int baselineFeature(cv::Mat &src, std::vector<float> &fvec);
 
+// Normalized 2D RG chromaticity histogram. bins^2 values.
+int rgChromaHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 16);
+
+// Normalized 3D RGB histogram. bins^3 values.
+int rgbHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 8);
+
 #endif // FEATURES_H

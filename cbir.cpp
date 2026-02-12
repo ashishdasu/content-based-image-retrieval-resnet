@@ -9,8 +9,10 @@
   Usage:
     cbir <target_image> <image_dir> <feature_type> <N>
 
-  Supported feature types (commit 1):
+  Supported feature types:
     baseline   - 7x7 center patch, SSD distance
+    rg_hist    - 2D RG chromaticity histogram (16 bins), histogram intersection
+    rgb_hist   - 3D RGB histogram (8 bins),  histogram intersection
 */
 
 #include <cstdio>
@@ -65,9 +67,13 @@ static std::string basename(const std::string &path) {
 
 static int computeFeature(cv::Mat &img, const char *feat_type,
                            std::vector<float> &fvec) {
-    if (strcmp(feat_type, "baseline") == 0) {
+    if (strcmp(feat_type, "baseline") == 0)
         return baselineFeature(img, fvec);
-    }
+    if (strcmp(feat_type, "rg_hist") == 0)
+        return rgChromaHistogram(img, fvec);
+    if (strcmp(feat_type, "rgb_hist") == 0)
+        return rgbHistogram(img, fvec);
+
     fprintf(stderr, "Unknown feature type: %s\n", feat_type);
     return -1;
 }
@@ -75,11 +81,12 @@ static int computeFeature(cv::Mat &img, const char *feat_type,
 static float computeDistance(const std::vector<float> &a,
                               const std::vector<float> &b,
                               const char *feat_type) {
-    // baseline uses SSD
-    if (strcmp(feat_type, "baseline") == 0) {
+    if (strcmp(feat_type, "baseline") == 0)
         return ssd(a, b);
-    }
-    return ssd(a, b); // default fallback
+    if (strcmp(feat_type, "rg_hist") == 0 || strcmp(feat_type, "rgb_hist") == 0)
+        return histIntersection(a, b);
+
+    return ssd(a, b);
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +96,7 @@ static float computeDistance(const std::vector<float> &a,
 int main(int argc, char *argv[]) {
     if (argc < 5) {
         printf("Usage: %s <target> <image_dir> <feature_type> <N>\n\n", argv[0]);
-        printf("  feature_type: baseline\n");
+        printf("  feature_type: baseline | rg_hist | rgb_hist\n");
         printf("  N          : number of top matches to display\n");
         return 1;
     }

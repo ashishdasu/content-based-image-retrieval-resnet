@@ -28,3 +28,20 @@ float ssd(const std::vector<float> &a, const std::vector<float> &b) {
     }
     return dist;
 }
+
+/*
+  histIntersection
+
+  Measures dissimilarity between two normalized histograms as
+  1 - sum_i( min(a[i], b[i]) ).
+
+  The intersection sum is a similarity in [0, 1] for normalized inputs,
+  so subtracting from 1 gives a proper distance where 0 = identical.
+*/
+float histIntersection(const std::vector<float> &a, const std::vector<float> &b) {
+    float intersection = 0.0f;
+    for (size_t i = 0; i < a.size(); i++) {
+        intersection += std::min(a[i], b[i]);
+    }
+    return 1.0f - intersection;
+}
