@@ -21,4 +21,9 @@ float ssd(const std::vector<float> &a, const std::vector<float> &b);
 // Both vectors must already be normalized (sum to 1).
 float histIntersection(const std::vector<float> &a, const std::vector<float> &b);
 
+// Weighted combination of histogram intersection over two spatial sub-histograms.
+// histSize is the number of bins in each half (total vector length = 2 * histSize).
+float multiHistDistance(const std::vector<float> &a, const std::vector<float> &b,
+                        int histSize, float w1 = 0.5f, float w2 = 0.5f);
+
 #endif // DISTANCES_H

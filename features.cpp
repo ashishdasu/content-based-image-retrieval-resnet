@@ -112,3 +112,33 @@ int rgbHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
 
     return 0;
 }
+
+/*
+  multiHistogram
+
+  Splits the image horizontally at the midpoint, computes an RGB histogram
+  for each half independently, then concatenates them into a single vector.
+  Result is 2 * bins^3 values — the top half's histogram followed by the
+  bottom half's.
+
+  Using two spatial regions lets the distance metric distinguish images that
+  share the same global color palette but differ in where those colors appear
+  (e.g., sky-on-top vs sky-on-bottom).
+*/
+int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
+    fvec.clear();
+
+    int mid = src.rows / 2;
+
+    cv::Mat top    = src(cv::Rect(0, 0,   src.cols, mid));
+    cv::Mat bottom = src(cv::Rect(0, mid, src.cols, src.rows - mid));
+
+    std::vector<float> top_hist, bot_hist;
+    rgbHistogram(top,    top_hist, bins);
+    rgbHistogram(bottom, bot_hist, bins);
+
+    fvec.insert(fvec.end(), top_hist.begin(), top_hist.end());
+    fvec.insert(fvec.end(), bot_hist.begin(), bot_hist.end());
+
+    return 0;
+}

@@ -26,4 +26,7 @@ int rgChromaHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 16);
 // Normalized 3D RGB histogram. bins^3 values.
 int rgbHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 8);
 
+// Top-half + bottom-half RGB histograms concatenated. 2 * bins^3 values.
+int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins = 8);
+
 #endif // FEATURES_H

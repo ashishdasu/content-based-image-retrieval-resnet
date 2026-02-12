@@ -10,9 +10,10 @@
     cbir <target_image> <image_dir> <feature_type> <N>
 
   Supported feature types:
-    baseline   - 7x7 center patch, SSD distance
-    rg_hist    - 2D RG chromaticity histogram (16 bins), histogram intersection
-    rgb_hist   - 3D RGB histogram (8 bins),  histogram intersection
+    baseline    - 7x7 center patch, SSD distance
+    rg_hist     - 2D RG chromaticity histogram (16 bins), histogram intersection
+    rgb_hist    - 3D RGB histogram (8 bins), histogram intersection
+    multi_hist  - top/bottom RGB histograms (8 bins each), weighted intersection
 */
 
 #include <cstdio>
@@ -73,6 +74,8 @@ static int computeFeature(cv::Mat &img, const char *feat_type,
         return rgChromaHistogram(img, fvec);
     if (strcmp(feat_type, "rgb_hist") == 0)
         return rgbHistogram(img, fvec);
+    if (strcmp(feat_type, "multi_hist") == 0)
+        return multiHistogram(img, fvec);
 
     fprintf(stderr, "Unknown feature type: %s\n", feat_type);
     return -1;
@@ -85,6 +88,8 @@ static float computeDistance(const std::vector<float> &a,
         return ssd(a, b);
     if (strcmp(feat_type, "rg_hist") == 0 || strcmp(feat_type, "rgb_hist") == 0)
         return histIntersection(a, b);
+    if (strcmp(feat_type, "multi_hist") == 0)
+        return multiHistDistance(a, b, 8 * 8 * 8); // histSize = bins^3
 
     return ssd(a, b);
 }
@@ -96,7 +101,7 @@ static float computeDistance(const std::vector<float> &a,
 int main(int argc, char *argv[]) {
     if (argc < 5) {
         printf("Usage: %s <target> <image_dir> <feature_type> <N>\n\n", argv[0]);
-        printf("  feature_type: baseline | rg_hist | rgb_hist\n");
+        printf("  feature_type: baseline | rg_hist | rgb_hist | multi_hist\n");
         printf("  N          : number of top matches to display\n");
         return 1;
     }
