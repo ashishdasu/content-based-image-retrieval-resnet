@@ -83,3 +83,20 @@ float cosineDistance(const std::vector<float> &a, const std::vector<float> &b) {
     if (na < 1e-8f || nb < 1e-8f) return 1.0f;
     return 1.0f - dot / (std::sqrt(na) * std::sqrt(nb));
 }
+
+/*
+  weightedSSD
+
+  SSD with per-element weights. Allows certain dimensions to contribute
+  more strongly to the distance than others — useful when feature dimensions
+  have very different discriminative power.
+*/
+float weightedSSD(const std::vector<float> &a, const std::vector<float> &b,
+                  const std::vector<float> &weights) {
+    float dist = 0.0f;
+    for (size_t i = 0; i < a.size(); i++) {
+        float d = a[i] - b[i];
+        dist += weights[i] * d * d;
+    }
+    return dist;
+}

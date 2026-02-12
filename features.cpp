@@ -308,3 +308,79 @@ int textureColorFeature(cv::Mat &src, std::vector<float> &fvec,
 
     return 0;
 }
+
+/*
+  bananaFeature
+
+  Custom descriptor designed to find images containing bananas (or similarly
+  shaped yellow blobs). Works by isolating banana-yellow pixels in HSV space
+  and characterizing how much yellow is present and how tightly it is clustered.
+
+  Feature vector (4 values):
+    [0] yellow fraction   — what fraction of pixels fall in the banana HSV range
+    [1] var_x             — spatial variance of yellow pixels along x (normalized)
+    [2] var_y             — spatial variance of yellow pixels along y (normalized)
+    [3] coherence         — 1 / (1 + var_x + var_y); high for tight blobs
+
+  Banana yellow HSV range (OpenCV scale 0-179 / 0-255 / 0-255):
+    H: 15–40, S: 80–255, V: 80–255
+
+  Spatial variance is computed on coordinates normalized to [0,1], so it is
+  image-size independent. The coherence value is the single most useful
+  discriminator: sunsets have low coherence (yellow everywhere), bananas have
+  high coherence (yellow in one spot), and non-yellow images have coherence
+  near 1.0 (but with near-zero fraction, so all features together separate them).
+
+  Distance: weighted SSD — yellow fraction is weighted 4x, variance/coherence 1x.
+  This prioritises finding images with a similar amount of banana-yellow.
+*/
+int bananaFeature(cv::Mat &src, std::vector<float> &fvec) {
+    fvec.clear();
+
+    cv::Mat hsv;
+    cv::cvtColor(src, hsv, cv::COLOR_BGR2HSV);
+
+    cv::Mat mask;
+    cv::inRange(hsv, cv::Scalar(15, 80, 80), cv::Scalar(40, 255, 255), mask);
+
+    int total = src.rows * src.cols;
+
+    // Collect normalized coordinates of yellow pixels
+    std::vector<float> xs, ys;
+    xs.reserve(total / 4);
+    ys.reserve(total / 4);
+
+    for (int r = 0; r < src.rows; r++) {
+        for (int c = 0; c < src.cols; c++) {
+            if (mask.at<uchar>(r, c) > 0) {
+                xs.push_back((float)c / src.cols);
+                ys.push_back((float)r / src.rows);
+            }
+        }
+    }
+
+    float fraction = (float)xs.size() / total;
+
+    float var_x = 0.0f, var_y = 0.0f;
+    if (xs.size() > 1) {
+        float mx = 0.0f, my = 0.0f;
+        for (float x : xs) mx += x;
+        for (float y : ys) my += y;
+        mx /= xs.size();
+        my /= ys.size();
+
+        for (float x : xs) var_x += (x - mx) * (x - mx);
+        for (float y : ys) var_y += (y - my) * (y - my);
+        var_x /= xs.size();
+        var_y /= ys.size();
+    }
+
+    float coherence = 1.0f / (1.0f + var_x + var_y);
+
+    fvec.push_back(fraction);
+    fvec.push_back(var_x);
+    fvec.push_back(var_y);
+    fvec.push_back(coherence);
+
+    return 0;
+}

@@ -29,4 +29,8 @@ float multiHistDistance(const std::vector<float> &a, const std::vector<float> &b
 // Cosine distance: 1 - cos(theta). Computed via L2-normalized dot product.
 float cosineDistance(const std::vector<float> &a, const std::vector<float> &b);
 
+// Weighted SSD: each element scaled by its corresponding weight before squaring.
+float weightedSSD(const std::vector<float> &a, const std::vector<float> &b,
+                  const std::vector<float> &weights);
+
 #endif // DISTANCES_H

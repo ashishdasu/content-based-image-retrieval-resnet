@@ -39,4 +39,9 @@ int textureColorFeature(cv::Mat &src, std::vector<float> &fvec,
 // levels: number of gray levels to quantize to (default 8).
 int cooccurrenceFeature(cv::Mat &src, std::vector<float> &fvec, int levels = 8);
 
+// Custom banana feature: yellow pixel fraction + spatial variance of yellow pixels.
+// Designed to find images containing bananas or similarly-colored yellow blobs.
+// Returns a 4-element vector: [fraction, var_x, var_y, coherence].
+int bananaFeature(cv::Mat &src, std::vector<float> &fvec);
+
 #endif // FEATURES_H

@@ -91,6 +91,8 @@ int main(int argc, char *argv[]) {
             status = textureColorFeature(img, feat);
         else if (strcmp(feat_type, "cooccurrence") == 0)
             status = cooccurrenceFeature(img, feat);
+        else if (strcmp(feat_type, "banana") == 0)
+            status = bananaFeature(img, feat);
         else {
             fprintf(stderr, "Unknown feature type: %s\n", feat_type);
             fclose(fp);

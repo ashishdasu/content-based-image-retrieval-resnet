@@ -26,6 +26,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <unordered_map>
 #include "opencv2/opencv.hpp"
 #include "features.h"
 #include "distances.h"
@@ -83,6 +84,8 @@ static int computeFeature(cv::Mat &img, const char *feat_type,
         return textureColorFeature(img, fvec);
     if (strcmp(feat_type, "cooccurrence") == 0)
         return cooccurrenceFeature(img, fvec);
+    if (strcmp(feat_type, "banana") == 0)
+        return bananaFeature(img, fvec);
 
     fprintf(stderr, "Unknown feature type: %s\n", feat_type);
     return -1;
@@ -100,7 +103,12 @@ static float computeDistance(const std::vector<float> &a,
     if (strcmp(feat_type, "texture_color") == 0)
         return multiHistDistance(a, b, 8 * 8 * 8); // split: 512 color + 16 texture
     if (strcmp(feat_type, "cooccurrence") == 0)
-        return ssd(a, b); // 5 normalized values, SSD is appropriate
+        return ssd(a, b);
+    if (strcmp(feat_type, "banana") == 0) {
+        // weight: fraction x4, var_x x1, var_y x1, coherence x2
+        std::vector<float> w = {4.0f, 1.0f, 1.0f, 2.0f};
+        return weightedSSD(a, b, w);
+    }
 
     return ssd(a, b);
 }
@@ -175,6 +183,78 @@ static int queryDNN(const char *target_name, const char *csv_path, int N) {
     return 0;
 }
 
+// Combined DNN + yellow-blob banana query
+// Usage: cbir <target_name> <image_dir> banana_dnn <N> <csv_path>
+static int queryBananaDNN(const char *target_name, const char *image_dir,
+                           int N, const char *csv_path) {
+    // Load DNN embeddings
+    std::vector<std::string> emb_names;
+    std::vector<std::vector<float>> emb_data;
+    if (readEmbeddingsCSV(csv_path, emb_names, emb_data) != 0) return -1;
+
+    // Build lookup: basename -> embedding index
+    std::unordered_map<std::string, int> emb_idx;
+    for (int i = 0; i < (int)emb_names.size(); i++)
+        emb_idx[basename(emb_names[i])] = i;
+
+    std::string tbase = basename(std::string(target_name));
+    auto it = emb_idx.find(tbase);
+    if (it == emb_idx.end()) {
+        fprintf(stderr, "Target '%s' not found in CSV\n", target_name);
+        return -1;
+    }
+    const std::vector<float> &tvec_dnn = emb_data[it->second];
+
+    // Yellow feature for target
+    cv::Mat target_img = cv::imread(std::string(image_dir) + "/" + tbase);
+    if (target_img.empty()) {
+        fprintf(stderr, "Cannot read target image\n"); return -1;
+    }
+    std::vector<float> tvec_yellow;
+    bananaFeature(target_img, tvec_yellow);
+
+    // Collect images
+    std::vector<std::string> db_paths;
+    collectImages(image_dir, db_paths);
+
+    const std::vector<float> yellow_weights = {4.0f, 1.0f, 1.0f, 2.0f};
+
+    std::vector<std::pair<float, std::string>> results;
+    for (const auto &path : db_paths) {
+        std::string bname = basename(path);
+        if (bname == tbase) continue;
+
+        cv::Mat img = cv::imread(path);
+        if (img.empty()) continue;
+
+        std::vector<float> yvec;
+        bananaFeature(img, yvec);
+
+        float d_yellow = weightedSSD(tvec_yellow, yvec, yellow_weights);
+
+        float d_dnn = 1.0f; // default high if not in CSV
+        auto jt = emb_idx.find(bname);
+        if (jt != emb_idx.end())
+            d_dnn = cosineDistance(tvec_dnn, emb_data[jt->second]);
+
+        // Equal weighting of the two signals
+        float dist = 0.5f * d_dnn + 0.5f * d_yellow;
+        results.push_back({dist, path});
+    }
+
+    std::sort(results.begin(), results.end());
+
+    int show = std::min(N, (int)results.size());
+    printf("\nTop %d matches for %s  [method: banana_dnn]\n", show, tbase.c_str());
+    printf("%-5s  %-14s  %s\n", "Rank", "Distance", "File");
+    printf("%-5s  %-14s  %s\n", "----", "--------", "----");
+    for (int i = 0; i < show; i++) {
+        printf("%-5d  %-14.6f  %s\n", i + 1, results[i].first,
+               basename(results[i].second).c_str());
+    }
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -192,9 +272,17 @@ int main(int argc, char *argv[]) {
     const char *feat_type   = argv[3];
     int N = atoi(argv[4]);
 
-    // DNN path: embeddings are pre-computed; argv[2] is the CSV, not an image dir
+    // DNN path: argv[2] is the CSV
     if (strcmp(feat_type, "dnn") == 0) {
         return queryDNN(target_path, image_dir, N);
+    }
+    // banana_dnn: needs image_dir and CSV; CSV passed as argv[5]
+    if (strcmp(feat_type, "banana_dnn") == 0) {
+        if (argc < 6) {
+            fprintf(stderr, "banana_dnn requires: cbir <target_name> <image_dir> banana_dnn <N> <csv_path>\n");
+            return 1;
+        }
+        return queryBananaDNN(target_path, image_dir, N, argv[5]);
     }
 
     // ------------------------------------------------------------------
