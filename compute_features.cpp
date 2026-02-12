@@ -93,6 +93,10 @@ int main(int argc, char *argv[]) {
             status = cooccurrenceFeature(img, feat);
         else if (strcmp(feat_type, "banana") == 0)
             status = bananaFeature(img, feat);
+        else if (strcmp(feat_type, "trash_can") == 0)
+            status = trashCanFeature(img, feat);
+        else if (strcmp(feat_type, "gabor") == 0)
+            status = gaborFeature(img, feat);
         else {
             fprintf(stderr, "Unknown feature type: %s\n", feat_type);
             fclose(fp);

@@ -44,4 +44,17 @@ int cooccurrenceFeature(cv::Mat &src, std::vector<float> &fvec, int levels = 8);
 // Returns a 4-element vector: [fraction, var_x, var_y, coherence].
 int bananaFeature(cv::Mat &src, std::vector<float> &fvec);
 
+// Blue blob feature for trash can detection.
+// Same structure as bananaFeature but tuned to blue HSV range.
+// Returns a 4-element vector: [fraction, var_x, var_y, coherence].
+int trashCanFeature(cv::Mat &src, std::vector<float> &fvec);
+
+// Gabor texture feature: histograms of filter responses across multiple
+// orientations and scales. textureBins bins per filter, concatenated.
+// orientations: number of angle steps in [0, pi)
+// scales: number of wavelength values to try
+// Total vector length: orientations * scales * textureBins
+int gaborFeature(cv::Mat &src, std::vector<float> &fvec,
+                 int orientations = 4, int scales = 2, int textureBins = 8);
+
 #endif // FEATURES_H

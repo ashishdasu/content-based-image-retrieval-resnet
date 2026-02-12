@@ -86,6 +86,10 @@ static int computeFeature(cv::Mat &img, const char *feat_type,
         return cooccurrenceFeature(img, fvec);
     if (strcmp(feat_type, "banana") == 0)
         return bananaFeature(img, fvec);
+    if (strcmp(feat_type, "trash_can") == 0)
+        return trashCanFeature(img, fvec);
+    if (strcmp(feat_type, "gabor") == 0)
+        return gaborFeature(img, fvec);
 
     fprintf(stderr, "Unknown feature type: %s\n", feat_type);
     return -1;
@@ -104,10 +108,26 @@ static float computeDistance(const std::vector<float> &a,
         return multiHistDistance(a, b, 8 * 8 * 8); // split: 512 color + 16 texture
     if (strcmp(feat_type, "cooccurrence") == 0)
         return ssd(a, b);
-    if (strcmp(feat_type, "banana") == 0) {
-        // weight: fraction x4, var_x x1, var_y x1, coherence x2
+    if (strcmp(feat_type, "banana") == 0 || strcmp(feat_type, "trash_can") == 0) {
         std::vector<float> w = {4.0f, 1.0f, 1.0f, 2.0f};
         return weightedSSD(a, b, w);
+    }
+    if (strcmp(feat_type, "gabor") == 0) {
+        // Feature is N concatenated histograms of textureBins=8 bins each.
+        // Compute intersection per sub-histogram and average so the result
+        // stays in [0, 1] regardless of how many filters are stacked.
+        const int bins_per_filter = 8;
+        int n_filters = (int)a.size() / bins_per_filter;
+        if (n_filters < 1) return ssd(a, b);
+        float total = 0.0f;
+        for (int f = 0; f < n_filters; f++) {
+            std::vector<float> ha(a.begin() + f * bins_per_filter,
+                                  a.begin() + (f + 1) * bins_per_filter);
+            std::vector<float> hb(b.begin() + f * bins_per_filter,
+                                  b.begin() + (f + 1) * bins_per_filter);
+            total += histIntersection(ha, hb);
+        }
+        return total / n_filters;
     }
 
     return ssd(a, b);

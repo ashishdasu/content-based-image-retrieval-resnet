@@ -384,3 +384,146 @@ int bananaFeature(cv::Mat &src, std::vector<float> &fvec) {
 
     return 0;
 }
+
+/*
+  trashCanFeature
+
+  Same structure as bananaFeature but tuned to the blue HSV range typical
+  of the blue plastic trash/recycling bins in the olympus database.
+
+  Blue HSV range (OpenCV 0-179 / 0-255 / 0-255):
+    H: 100–130  (blue hue band)
+    S: 80–255   (saturated, avoids gray sky)
+    V: 40–255   (allows darker blue bins in shadow)
+
+  Returns [fraction, var_x, var_y, coherence] — same interpretation as
+  bananaFeature. A blue bin appears as a coherent blue blob, distinguishable
+  from blue sky (high fraction, low coherence) and incidental blue pixels.
+*/
+int trashCanFeature(cv::Mat &src, std::vector<float> &fvec) {
+    fvec.clear();
+
+    cv::Mat hsv;
+    cv::cvtColor(src, hsv, cv::COLOR_BGR2HSV);
+
+    cv::Mat mask;
+    cv::inRange(hsv, cv::Scalar(100, 80, 40), cv::Scalar(130, 255, 255), mask);
+
+    int total = src.rows * src.cols;
+
+    std::vector<float> xs, ys;
+    xs.reserve(total / 4);
+    ys.reserve(total / 4);
+
+    for (int r = 0; r < src.rows; r++) {
+        for (int c = 0; c < src.cols; c++) {
+            if (mask.at<uchar>(r, c) > 0) {
+                xs.push_back((float)c / src.cols);
+                ys.push_back((float)r / src.rows);
+            }
+        }
+    }
+
+    float fraction = (float)xs.size() / total;
+    float var_x = 0.0f, var_y = 0.0f;
+
+    if (xs.size() > 1) {
+        float mx = 0.0f, my = 0.0f;
+        for (float x : xs) mx += x;
+        for (float y : ys) my += y;
+        mx /= xs.size();
+        my /= ys.size();
+
+        for (float x : xs) var_x += (x - mx) * (x - mx);
+        for (float y : ys) var_y += (y - my) * (y - my);
+        var_x /= xs.size();
+        var_y /= ys.size();
+    }
+
+    float coherence = 1.0f / (1.0f + var_x + var_y);
+
+    fvec.push_back(fraction);
+    fvec.push_back(var_x);
+    fvec.push_back(var_y);
+    fvec.push_back(coherence);
+
+    return 0;
+}
+
+/*
+  gaborFeature
+
+  Applies a bank of Gabor filters at multiple orientations and scales to
+  the grayscale image, then builds a normalized histogram of response
+  magnitudes for each filter. The histograms are concatenated into a single
+  feature vector.
+
+  A Gabor filter is a sinusoidal grating modulated by a Gaussian envelope,
+  tuned to a specific spatial frequency (scale) and orientation. Different
+  textures activate different filters: fine horizontal stripes activate
+  high-frequency horizontal filters, coarse diagonal patterns activate
+  low-frequency diagonal filters, etc.
+
+  Parameters:
+    orientations  - number of evenly spaced angles in [0, pi)
+    scales        - number of wavelength values (lambda) to use
+    textureBins   - histogram bins per filter
+
+  Wavelengths used: 4.0 and 8.0 pixels (fine and coarse texture).
+  Kernel size: 15x15. sigma = lambda / pi (standard Gabor relationship).
+
+  Total feature vector length: orientations * scales * textureBins.
+  For defaults (4, 2, 8): 64 values.
+*/
+int gaborFeature(cv::Mat &src, std::vector<float> &fvec,
+                 int orientations, int scales, int textureBins) {
+    fvec.clear();
+
+    cv::Mat gray;
+    cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+    cv::Mat gray32;
+    gray.convertTo(gray32, CV_32F);
+
+    // wavelengths for each scale (fine to coarse)
+    std::vector<double> lambdas = {4.0, 8.0};
+    while ((int)lambdas.size() < scales)
+        lambdas.push_back(lambdas.back() * 2.0);
+    lambdas.resize(scales);
+
+    const float max_response = 255.0f;
+    const float scale_factor = textureBins / max_response;
+    int total = src.rows * src.cols;
+
+    for (int s = 0; s < scales; s++) {
+        double lambda = lambdas[s];
+        double sigma  = lambda / CV_PI;
+
+        for (int o = 0; o < orientations; o++) {
+            double theta = o * CV_PI / orientations;
+
+            cv::Mat kernel = cv::getGaborKernel(
+                cv::Size(15, 15), sigma, theta, lambda, 0.5, 0, CV_32F);
+
+            cv::Mat response;
+            cv::filter2D(gray32, response, CV_32F, kernel);
+
+            // take absolute value — we care about response magnitude
+            cv::Mat mag;
+            cv::magnitude(response, cv::Mat::zeros(response.size(), CV_32F), mag);
+
+            std::vector<float> hist(textureBins, 0.0f);
+            for (int r = 0; r < mag.rows; r++) {
+                for (int c = 0; c < mag.cols; c++) {
+                    int bin = std::min((int)(mag.at<float>(r, c) * scale_factor),
+                                      textureBins - 1);
+                    hist[bin] += 1.0f;
+                }
+            }
+            for (auto &v : hist) v /= total;
+
+            fvec.insert(fvec.end(), hist.begin(), hist.end());
+        }
+    }
+
+    return 0;
+}
