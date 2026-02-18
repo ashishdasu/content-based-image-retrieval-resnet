@@ -10,19 +10,8 @@
 #include <cstdio>
 #include <cmath>
 
-/*
-  baselineFeature
-
-  Extracts the 7x7 center patch of the image as a flat feature vector.
-  Pixels are read in row-major order with interleaved BGR channels, so the
-  resulting vector has 7 * 7 * 3 = 147 elements.
-
-  This is intentionally simple: the center crop carries the dominant color
-  and rough structure of the subject without any invariance or compression.
-  Two images with identical center patches will have SSD distance = 0.
-
-  Returns 0 on success, -1 if the image is smaller than 7x7.
-*/
+// Flattens the 7x7 center patch into a BGR pixel vector (147 values).
+// Returns -1 if the image is smaller than 7x7.
 int baselineFeature(cv::Mat &src, std::vector<float> &fvec) {
     fvec.clear();
 
@@ -47,17 +36,8 @@ int baselineFeature(cv::Mat &src, std::vector<float> &fvec) {
     return 0;
 }
 
-/*
-  rgChromaHistogram
-
-  Computes a normalized 2D histogram in RG chromaticity space.
-  r = R/(R+G+B),  g = G/(R+G+B).  Pixels where R+G+B < 1 (pure black)
-  are skipped to avoid division by zero.
-
-  Stored row-major: index = r_bin * bins + g_bin.
-  Values are normalized by the number of non-black pixels, so each bin
-  holds the fraction of pixels falling there.
-*/
+// Normalized 2D RG chromaticity histogram. Pure-black pixels skipped.
+// Stored row-major: index = r_bin * bins + g_bin.
 int rgChromaHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
     fvec.assign(bins * bins, 0.0f);
 
@@ -86,13 +66,7 @@ int rgChromaHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
     return 0;
 }
 
-/*
-  rgbHistogram
-
-  Computes a normalized 3D RGB histogram by binning each channel independently.
-  Index = r_bin * bins^2 + g_bin * bins + b_bin.
-  Histogram is normalized by total pixel count.
-*/
+// Normalized 3D RGB histogram. Index = r_bin * bins^2 + g_bin * bins + b_bin.
 int rgbHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
     fvec.assign(bins * bins * bins, 0.0f);
 
@@ -114,18 +88,7 @@ int rgbHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
     return 0;
 }
 
-/*
-  multiHistogram
-
-  Splits the image horizontally at the midpoint, computes an RGB histogram
-  for each half independently, then concatenates them into a single vector.
-  Result is 2 * bins^3 values — the top half's histogram followed by the
-  bottom half's.
-
-  Using two spatial regions lets the distance metric distinguish images that
-  share the same global color palette but differ in where those colors appear
-  (e.g., sky-on-top vs sky-on-bottom).
-*/
+// RGB histograms for the top and bottom halves, concatenated (2 * bins^3 values).
 int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
     fvec.clear();
 
@@ -144,27 +107,9 @@ int multiHistogram(cv::Mat &src, std::vector<float> &fvec, int bins) {
     return 0;
 }
 
-/*
-  cooccurrenceFeature
-
-  Computes the Gray-Level Co-occurrence Matrix (GLCM) for four spatial
-  offsets — horizontal (1,0), vertical (0,1), diagonal (1,1), and
-  anti-diagonal (1,-1) — then extracts five Haralick statistics from each
-  and averages them across directions for rotation invariance.
-
-  The five features:
-    Energy      - sum of squared probabilities; high for uniform/regular textures
-    Entropy     - randomness; high for complex/irregular textures
-    Contrast    - local intensity variation; high when neighbors differ a lot
-    Homogeneity - closeness to diagonal; high when neighbors are similar
-    Correlation - linear dependency of gray-level pairs
-
-  All five are normalized to [0, 1] before being placed in the feature vector
-  so that SSD operates on comparable scales.
-
-  Gray levels are quantized to `levels` bins (default 8) to keep the matrix
-  compact. The GLCM is made symmetric by counting both (i,j) and (j,i).
-*/
+// GLCM texture descriptor. Builds co-occurrence matrices across 4 directions,
+// extracts 5 Haralick statistics (energy, entropy, contrast, homogeneity,
+// correlation), averages across directions, and normalizes each to [0, 1].
 int cooccurrenceFeature(cv::Mat &src, std::vector<float> &fvec, int levels) {
     fvec.clear();
 
@@ -254,31 +199,15 @@ int cooccurrenceFeature(cv::Mat &src, std::vector<float> &fvec, int levels) {
     return 0;
 }
 
-/*
-  textureColorFeature
-
-  Concatenates two whole-image descriptors:
-    1. RGB color histogram (colorBins^3 values, normalized)
-    2. Sobel gradient magnitude histogram (textureBins values, normalized)
-
-  The texture histogram captures edge density at different strength levels.
-  Smooth images (flat color, sky, water) accumulate in the low-magnitude bins;
-  textured images (foliage, fabric, crowds) spread energy into higher bins.
-
-  Sobel is run on a grayscale version of the image. Magnitudes are capped at
-  1000 before binning — values above this are strong edges and land in the
-  last bin. This cap handles the ~1442 theoretical max without distorting the
-  lower bins where most of the variation is.
-*/
+// RGB histogram (colorBins^3) concatenated with a Sobel gradient magnitude
+// histogram (textureBins values). Magnitudes capped at 1000 before binning.
 int textureColorFeature(cv::Mat &src, std::vector<float> &fvec,
                         int colorBins, int textureBins) {
     fvec.clear();
 
-    // --- color part ---
     std::vector<float> color_hist;
     rgbHistogram(src, color_hist, colorBins);
 
-    // --- texture part ---
     cv::Mat gray;
     cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
 
@@ -302,38 +231,14 @@ int textureColorFeature(cv::Mat &src, std::vector<float> &fvec,
     }
     for (auto &v : texture_hist) v /= total;
 
-    // --- concatenate ---
     fvec.insert(fvec.end(), color_hist.begin(), color_hist.end());
     fvec.insert(fvec.end(), texture_hist.begin(), texture_hist.end());
 
     return 0;
 }
 
-/*
-  bananaFeature
-
-  Custom descriptor designed to find images containing bananas (or similarly
-  shaped yellow blobs). Works by isolating banana-yellow pixels in HSV space
-  and characterizing how much yellow is present and how tightly it is clustered.
-
-  Feature vector (4 values):
-    [0] yellow fraction   — what fraction of pixels fall in the banana HSV range
-    [1] var_x             — spatial variance of yellow pixels along x (normalized)
-    [2] var_y             — spatial variance of yellow pixels along y (normalized)
-    [3] coherence         — 1 / (1 + var_x + var_y); high for tight blobs
-
-  Banana yellow HSV range (OpenCV scale 0-179 / 0-255 / 0-255):
-    H: 15–40, S: 80–255, V: 80–255
-
-  Spatial variance is computed on coordinates normalized to [0,1], so it is
-  image-size independent. The coherence value is the single most useful
-  discriminator: sunsets have low coherence (yellow everywhere), bananas have
-  high coherence (yellow in one spot), and non-yellow images have coherence
-  near 1.0 (but with near-zero fraction, so all features together separate them).
-
-  Distance: weighted SSD — yellow fraction is weighted 4x, variance/coherence 1x.
-  This prioritises finding images with a similar amount of banana-yellow.
-*/
+// Yellow HSV blob descriptor: [fraction, var_x, var_y, coherence].
+// HSV range H:[15,40] S:[80,255] V:[80,255]. Coherence = 1/(1+var_x+var_y).
 int bananaFeature(cv::Mat &src, std::vector<float> &fvec) {
     fvec.clear();
 
@@ -345,7 +250,6 @@ int bananaFeature(cv::Mat &src, std::vector<float> &fvec) {
 
     int total = src.rows * src.cols;
 
-    // Collect normalized coordinates of yellow pixels
     std::vector<float> xs, ys;
     xs.reserve(total / 4);
     ys.reserve(total / 4);
@@ -385,21 +289,8 @@ int bananaFeature(cv::Mat &src, std::vector<float> &fvec) {
     return 0;
 }
 
-/*
-  trashCanFeature
-
-  Same structure as bananaFeature but tuned to the blue HSV range typical
-  of the blue plastic trash/recycling bins in the olympus database.
-
-  Blue HSV range (OpenCV 0-179 / 0-255 / 0-255):
-    H: 100–130  (blue hue band)
-    S: 80–255   (saturated, avoids gray sky)
-    V: 40–255   (allows darker blue bins in shadow)
-
-  Returns [fraction, var_x, var_y, coherence] — same interpretation as
-  bananaFeature. A blue bin appears as a coherent blue blob, distinguishable
-  from blue sky (high fraction, low coherence) and incidental blue pixels.
-*/
+// Blue HSV blob descriptor for trash can detection. Same structure as bananaFeature.
+// HSV range H:[100,130] S:[80,255] V:[40,255]. Lower V allows bins in shadow.
 int trashCanFeature(cv::Mat &src, std::vector<float> &fvec) {
     fvec.clear();
 
@@ -450,31 +341,8 @@ int trashCanFeature(cv::Mat &src, std::vector<float> &fvec) {
     return 0;
 }
 
-/*
-  gaborFeature
-
-  Applies a bank of Gabor filters at multiple orientations and scales to
-  the grayscale image, then builds a normalized histogram of response
-  magnitudes for each filter. The histograms are concatenated into a single
-  feature vector.
-
-  A Gabor filter is a sinusoidal grating modulated by a Gaussian envelope,
-  tuned to a specific spatial frequency (scale) and orientation. Different
-  textures activate different filters: fine horizontal stripes activate
-  high-frequency horizontal filters, coarse diagonal patterns activate
-  low-frequency diagonal filters, etc.
-
-  Parameters:
-    orientations  - number of evenly spaced angles in [0, pi)
-    scales        - number of wavelength values (lambda) to use
-    textureBins   - histogram bins per filter
-
-  Wavelengths used: 4.0 and 8.0 pixels (fine and coarse texture).
-  Kernel size: 15x15. sigma = lambda / pi (standard Gabor relationship).
-
-  Total feature vector length: orientations * scales * textureBins.
-  For defaults (4, 2, 8): 64 values.
-*/
+// Gabor filter bank texture descriptor. Applies filters at orientations x scales,
+// histograms each response magnitude, and concatenates. Total: orientations * scales * textureBins.
 int gaborFeature(cv::Mat &src, std::vector<float> &fvec,
                  int orientations, int scales, int textureBins) {
     fvec.clear();
@@ -507,7 +375,6 @@ int gaborFeature(cv::Mat &src, std::vector<float> &fvec,
             cv::Mat response;
             cv::filter2D(gray32, response, CV_32F, kernel);
 
-            // take absolute value — we care about response magnitude
             cv::Mat mag;
             cv::magnitude(response, cv::Mat::zeros(response.size(), CV_32F), mag);
 

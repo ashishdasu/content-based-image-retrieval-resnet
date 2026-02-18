@@ -17,6 +17,10 @@
     rgb_hist      - 3D RGB histogram, 8 bins (512 values)
     multi_hist    - top/bottom RGB histograms, 8 bins (1024 values)
     texture_color - RGB histogram + Sobel magnitude histogram (528 values)
+    cooccurrence  - GLCM Haralick statistics (5 values)
+    banana        - yellow HSV blob descriptor (4 values)
+    trash_can     - blue HSV blob descriptor (4 values)
+    gabor         - Gabor filter bank histograms (64 values)
 */
 
 #include <cstdio>
@@ -51,7 +55,7 @@ static int collectImages(const char *dirpath, std::vector<std::string> &files) {
 int main(int argc, char *argv[]) {
     if (argc < 4) {
         printf("Usage: %s <image_dir> <feature_type> <output_csv>\n\n", argv[0]);
-        printf("  feature_type: baseline | rg_hist | rgb_hist\n");
+        printf("  feature_type: baseline | rg_hist | rgb_hist | multi_hist | texture_color | cooccurrence | banana | trash_can | gabor\n");
         return 1;
     }
 

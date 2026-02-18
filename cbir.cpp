@@ -31,10 +31,6 @@
 #include "features.h"
 #include "distances.h"
 
-// ---------------------------------------------------------------------------
-// Directory scanning
-// ---------------------------------------------------------------------------
-
 /*
   Populates `files` with the full path of every image file in `dirpath`.
   Recognises .jpg, .png, .ppm, and .tif extensions.
@@ -65,10 +61,6 @@ static std::string basename(const std::string &path) {
     size_t pos = path.find_last_of("/\\");
     return (pos == std::string::npos) ? path : path.substr(pos + 1);
 }
-
-// ---------------------------------------------------------------------------
-// Feature dispatch helpers
-// ---------------------------------------------------------------------------
 
 static int computeFeature(cv::Mat &img, const char *feat_type,
                            std::vector<float> &fvec) {
@@ -132,10 +124,6 @@ static float computeDistance(const std::vector<float> &a,
 
     return ssd(a, b);
 }
-
-// ---------------------------------------------------------------------------
-// DNN embedding support
-// ---------------------------------------------------------------------------
 
 // Read a CSV where each row is: filename,v0,v1,...,v511
 static int readEmbeddingsCSV(const char *csv_path,
@@ -237,7 +225,7 @@ static int queryBananaDNN(const char *target_name, const char *image_dir,
     std::vector<std::string> db_paths;
     collectImages(image_dir, db_paths);
 
-    const std::vector<float> yellow_weights = {4.0f, 1.0f, 1.0f, 2.0f};
+    const std::vector<float> yellow_weights = {1.0f, 1.0f, 1.0f, 4.0f};
 
     std::vector<std::pair<float, std::string>> results;
     for (const auto &path : db_paths) {
@@ -257,7 +245,7 @@ static int queryBananaDNN(const char *target_name, const char *image_dir,
         if (jt != emb_idx.end())
             d_dnn = cosineDistance(tvec_dnn, emb_data[jt->second]);
 
-        // Equal weighting of the two signals
+        // Equal weighting — DNN provides semantic context, yellow blob filters by color specificity
         float dist = 0.5f * d_dnn + 0.5f * d_yellow;
         results.push_back({dist, path});
     }
@@ -275,9 +263,72 @@ static int queryBananaDNN(const char *target_name, const char *image_dir,
     return 0;
 }
 
-// ---------------------------------------------------------------------------
-// main
-// ---------------------------------------------------------------------------
+// Combined DNN + blue-blob trash can query
+// Usage: cbir <target_name> <image_dir> trash_can_dnn <N> <csv_path>
+static int queryTrashCanDNN(const char *target_name, const char *image_dir,
+                             int N, const char *csv_path) {
+    std::vector<std::string> emb_names;
+    std::vector<std::vector<float>> emb_data;
+    if (readEmbeddingsCSV(csv_path, emb_names, emb_data) != 0) return -1;
+
+    std::unordered_map<std::string, int> emb_idx;
+    for (int i = 0; i < (int)emb_names.size(); i++)
+        emb_idx[basename(emb_names[i])] = i;
+
+    std::string tbase = basename(std::string(target_name));
+    auto it = emb_idx.find(tbase);
+    if (it == emb_idx.end()) {
+        fprintf(stderr, "Target '%s' not found in CSV\n", target_name);
+        return -1;
+    }
+    const std::vector<float> &tvec_dnn = emb_data[it->second];
+
+    cv::Mat target_img = cv::imread(std::string(image_dir) + "/" + tbase);
+    if (target_img.empty()) {
+        fprintf(stderr, "Cannot read target image\n"); return -1;
+    }
+    std::vector<float> tvec_blue;
+    trashCanFeature(target_img, tvec_blue);
+
+    std::vector<std::string> db_paths;
+    collectImages(image_dir, db_paths);
+
+    const std::vector<float> blue_weights = {4.0f, 1.0f, 1.0f, 2.0f};
+
+    std::vector<std::pair<float, std::string>> results;
+    for (const auto &path : db_paths) {
+        std::string bname = basename(path);
+        if (bname == tbase) continue;
+
+        cv::Mat img = cv::imread(path);
+        if (img.empty()) continue;
+
+        std::vector<float> bvec;
+        trashCanFeature(img, bvec);
+
+        float d_blue = weightedSSD(tvec_blue, bvec, blue_weights);
+
+        float d_dnn = 1.0f;
+        auto jt = emb_idx.find(bname);
+        if (jt != emb_idx.end())
+            d_dnn = cosineDistance(tvec_dnn, emb_data[jt->second]);
+
+        float dist = 0.7f * d_dnn + 0.3f * d_blue;
+        results.push_back({dist, path});
+    }
+
+    std::sort(results.begin(), results.end());
+
+    int show = std::min(N, (int)results.size());
+    printf("\nTop %d matches for %s  [method: trash_can_dnn]\n", show, tbase.c_str());
+    printf("%-5s  %-14s  %s\n", "Rank", "Distance", "File");
+    printf("%-5s  %-14s  %s\n", "----", "--------", "----");
+    for (int i = 0; i < show; i++) {
+        printf("%-5d  %-14.6f  %s\n", i + 1, results[i].first,
+               basename(results[i].second).c_str());
+    }
+    return 0;
+}
 
 int main(int argc, char *argv[]) {
     if (argc < 5) {
@@ -304,10 +355,16 @@ int main(int argc, char *argv[]) {
         }
         return queryBananaDNN(target_path, image_dir, N, argv[5]);
     }
+    // trash_can_dnn: same argument layout as banana_dnn
+    if (strcmp(feat_type, "trash_can_dnn") == 0) {
+        if (argc < 6) {
+            fprintf(stderr, "trash_can_dnn requires: cbir <target_name> <image_dir> trash_can_dnn <N> <csv_path>\n");
+            return 1;
+        }
+        return queryTrashCanDNN(target_path, image_dir, N, argv[5]);
+    }
 
-    // ------------------------------------------------------------------
-    // Step 1: compute features for the target image
-    // ------------------------------------------------------------------
+    // compute features for the target image
     cv::Mat target = cv::imread(target_path);
     if (target.empty()) {
         fprintf(stderr, "Could not read target image: %s\n", target_path);
@@ -317,9 +374,7 @@ int main(int argc, char *argv[]) {
     std::vector<float> target_feat;
     if (computeFeature(target, feat_type, target_feat) != 0) return -1;
 
-    // ------------------------------------------------------------------
-    // Step 2: collect all database images
-    // ------------------------------------------------------------------
+    // collect all database images
     std::vector<std::string> db_paths;
     if (collectImages(image_dir, db_paths) != 0) return -1;
 
@@ -327,9 +382,7 @@ int main(int argc, char *argv[]) {
 
     std::string target_base = basename(std::string(target_path));
 
-    // ------------------------------------------------------------------
-    // Step 3: compute features + distance for every database image
-    // ------------------------------------------------------------------
+    // compute features and distance for every database image
     std::vector<std::pair<float, std::string>> results;
     results.reserve(db_paths.size());
 
@@ -351,9 +404,7 @@ int main(int argc, char *argv[]) {
         results.push_back({dist, path});
     }
 
-    // ------------------------------------------------------------------
-    // Step 4: sort ascending and return top N
-    // ------------------------------------------------------------------
+    // sort ascending and return top N
     std::sort(results.begin(), results.end());
 
     int show = std::min(N, (int)results.size());
